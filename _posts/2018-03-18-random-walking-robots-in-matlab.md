@@ -43,7 +43,7 @@ Lets first check a simple configuration file we can use:
 
 We can use **fscanf** to read formatted inputs . We will use a struct to hold information of a robot. It helps us to symbolize the information and put them all in a single container. Since we will have multiple robots, to hold information of each robot we will utilize a cell array. Each element in the cell array will be a struct of a robot:
 
-```
+```matlab
 config      = 'random_robots.config';
 marker_size = 50;
 
@@ -74,7 +74,7 @@ fclose(fileID);
 
 Another requirement of this problem is that two robots can't occupy a position in the map. Robots should not move if there is another robot in the position they are trying to move. To simulate this, we need to know where each robot is in the field. We will hold this information in a matrix, if the position in the matrix is 0 then this position is empty, if it is 1, then it means there is already a robot in that position. When moving the robots, your code should clear the position in the map matrix, and set 1 to the moved position.
 
-```
+```matlab
 all_field = zeros(fieldx,fieldy);
 
 for i=1:robot_count
@@ -88,7 +88,7 @@ end
 
 To simulate the random direction picking we can use rand or randi function. To simplify it, we can use randi function to pick a random integer from 1:4 , and for each number we can use different direction. You should do this for each robot and after each move you need to check if it is a valid move meaning that there is no other robot occupying that position.
 
-```
+```matlab
     for i=1:robot_count
     
         robot = robots{i};
@@ -123,7 +123,7 @@ To simulate the random direction picking we can use rand or randi function. To s
 
 Only few pieces left before reaching the end goal. After randomly generating a move, if the robot reached a boundary, it should stop moving. And when all robots stopped moving, we can stop the simulation. It is easy to check the running robots with a counter. Checking the boundary is simply checking x and y position of the robot:
 
-```
+```matlab
         if robots{i}.x == 1 || robots{i}.y == 1 || robots{i}.x == fieldx || robots{i}.y == fieldy
             robots{i}.isStopped = true;
             num_running_robots = num_running_robots - 1;
@@ -132,7 +132,7 @@ Only few pieces left before reaching the end goal. After randomly generating a m
 
 Now we are nearly there. Only animation part is left. **You can create a plot animation in Matlab by simply deleting the old point and then replotting the figure**. Also adding some delays by using **pause(0.2)** you can plot the animation every 0.2 seconds.
 
-```
+```matlab
     delete(robots{i}.handle);
     robots{i}.handle= scatter(robot.x,robot.y,robot.size,robot.mark,'filled');
 
