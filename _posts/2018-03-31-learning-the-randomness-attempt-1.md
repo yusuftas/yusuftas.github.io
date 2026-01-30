@@ -38,7 +38,9 @@ plt.scatter(rng.rand(1,1000),rng.rand(1,1000))
 plt.show()
 ```
 
-![](/assets/img/random_pic1-300x202.png) It looks pretty much random to me :) So my idea is to somehow learn the randomness, but that plot basically shouts "I'm randooom. " but still there must be something I can try, I thought. I decided to look into **random seed**. For a given random seed, generated random sequence is deterministic. Maybe I can generate some data, using different random seeds and generate the first random value generator will generate. If we can utilize this data to figure out the value prng will generate, we can pretty much solve the randomness.
+![](/assets/img/random_pic1.png) 
+
+It looks pretty much random to me :) So my idea is to somehow learn the randomness, but that plot basically shouts "I'm randooom. " but still there must be something I can try, I thought. I decided to look into **random seed**. For a given random seed, generated random sequence is deterministic. Maybe I can generate some data, using different random seeds and generate the first random value generator will generate. If we can utilize this data to figure out the value prng will generate, we can pretty much solve the randomness.
 
 <!--more-->
 
@@ -148,7 +150,7 @@ plt.plot(train_X,y_res,linewidth=4, color='r')
 plt.show()
 ```
 
-![](/assets/img/linear_result-300x202.png)
+![](/assets/img/linear_result.png)
 
 Result is obvious, all of this random data could only be combined and represented with a line in the middle. So what else we can try to improve on this ? Maybe I can try multilayer fully connected network.
 
@@ -224,7 +226,7 @@ plt.show()
 
 ```
 
-![](/assets/img/multilayer_train-300x202.png)
+![](/assets/img/multilayer_train.png)
 
 To be honest, I wouldn't call this an improvement :) But really, that is about as cool as I could get it. Data is obviously random and I can't really see a pattern to learn by looking at the plot. But at least it shows how to use fully connected layers in tensorflow :)
 
