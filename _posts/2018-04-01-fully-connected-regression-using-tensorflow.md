@@ -14,7 +14,7 @@ tags:
   - "tensorflow"
 ---
 
-After my last post on [Learning the randomness](http://yusuftas.net/2018/03/31/learning-the-randomness-attempt-1/), I realized I might need to post something simpler on tensorflow. So in this post I will go over a simple regression problem to show that we can teach machines at least something :)
+After my last post on [Learning the randomness](https://yusuftas.net/2018/03/31/learning-the-randomness-attempt-1/), I realized I might need to post something simpler on tensorflow. So in this post I will go over a simple regression problem to show that we can teach machines at least something :)
 
 Today's problem is **square function**, yes the simple x^2 function :
 
