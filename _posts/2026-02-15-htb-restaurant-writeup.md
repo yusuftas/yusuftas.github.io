@@ -1,6 +1,6 @@
 ---
 title: "HTB: Restaurant Pwn Writeup"
-date: 2026-02-12
+date: 2026-02-15
 categories: 
   - "reverse-engineering"
   - "pwn"
@@ -13,7 +13,9 @@ tags:
   - "reverse-engineering"
 ---
 
-Week 2 of my personal challenge series continues this week with another pwn challenge from hackthebox: Restaurant. It is classified as an easy challenge 
+Week 2 of my personal challenge series continues this week with another pwn challenge from hackthebox: Restaurant. It is classified as an easy challenge.
+
+Older writeups and more can be found under this category here: <https://yusuftas.net/categories/pwn/>
 
 ## First Look
 
@@ -164,7 +166,7 @@ Great, we can go back to libc now if we want to. But we first have to find where
 2. Call execve("/bin/sh", NULL, NULL)
 3. Finding one gadgets, special points in libc that already calls  execve("/bin/sh".....) with certain constraints.
 
-I personally like 3rd approach, it is just a single return address, you return there without and further processing and bam you get a shell if the conditions of the one gadget is met. I initially tried this approach but, none of the one gadgets I found worked, so I went back to classic approach. For finding one gadgets, this tool works great: https://github.com/david942j/one_gadget
+I personally like 3rd approach, it is just a single return address, you return there without and further processing and bam you get a shell if the conditions of the one gadget is met. I initially tried this approach but, none of the one gadgets I found worked, so I went back to classic approach. For finding one gadgets, this tool works great: <https://github.com/david942j/one_gadget>
 
 For the classic system call approach, we need to provide /bin/sh as a parameter. Easiest way of doing this is finding it from libc itself, it will have a copy of /bin/sh somewhere:
 
@@ -216,7 +218,7 @@ Well it would have been better to get LD to load the provided libc file but my q
 
 ### Segfaults
 
-Now local issue was fixed. But even after using the right libc version, same code wasn't working in remote while it worked everytime I tested in my local. When testing it on remote, it was throwing segfault at some function calls. After a bit of research I learned that this is related to stack alingment to 16 bytes in 64bit systems, it is discussed here https://ir0nstone.gitbook.io/notes/binexp/stack/return-oriented-programming/stack-alignment
+Now local issue was fixed. But even after using the right libc version, same code wasn't working in remote while it worked everytime I tested in my local. When testing it on remote, it was throwing segfault at some function calls. After a bit of research I learned that this is related to stack alingment to 16 bytes in 64bit systems, it is discussed here <https://ir0nstone.gitbook.io/notes/binexp/stack/return-oriented-programming/stack-alignment>
 
 To be honest, I still don't understand why it works on my local 64bit system but not on the remote 64bit. Maybe it is related to how the binary is run at the remote machine. Regardless, solution is simple add ret instruction before the function calls that was segfaulting:
 
