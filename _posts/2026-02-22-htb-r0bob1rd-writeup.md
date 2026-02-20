@@ -13,7 +13,7 @@ tags:
   - "reverse-engineering"
 ---
 
-I am back again with my third week of challenge series: One pwn writeup a week. In this third week, I am again looking at another easy challenge from hackthebox: r0bob1rd. Let's just call it robobird to make it easy to write. Challenge can be found here: <https://app.hackthebox.com/challenges/r0bob1rd>
+I'm back with my third week of challenge series: One pwn writeup a week. In this third week, I am again looking at another easy challenge from hackthebox: r0bob1rd. Let's call it robobird to make it easy to write. Challenge can be found here: <https://app.hackthebox.com/challenges/r0bob1rd>
 
 ## Initial Look
 
@@ -23,7 +23,7 @@ I always start with checking what flags are enabled/disabled to see what I am de
 
 Looking at this result, we can say:
 
-* Stack is protected against buffer overflows. We might need to leak stack canary if we want to buffer overflow and override the return address.
+* Stack canary is enabled, which detects buffer overflows. We might need to leak stack canary if we want to buffer overflow and override the return address.
 * Partial Relro: Offsets at GOT are writable: If we can find a way to overwrite those offsets, we can direct libc calls to anywhere we want
 * No PIE: No need to leak a memory from code space to figure where code is randomly loaded into the memory.
 * RUNPATH is set: Oh thank you very very much, really I am so glad that is done. Last week I spent a good amount of time trying to figure out why the libc provided wasn't being used. RUNPATH loads the libc binary from the given relative path.
@@ -39,10 +39,10 @@ Compared to previous weeks, this one comes with multiple issues and attack vecto
 
 1. There is a buffer used for input and its size is set to 104 bytes. We will come back to this at third point.
 
-2. If you look at if and else at 2nd mark closely, any given input is used to access the robobirdNames array without proper bound checking. This should gives us arbitrary read around the memory where robobirdNames is stored. Looking at the code, we can see it is stored in data section of the binary.
+2. If you look at if and else at 2nd mark closely, any given input is used to access the robobirdNames array without proper bound checking. This should give us arbitrary read around the memory where robobirdNames is stored. Looking at the code, we can see it is stored in data section of the binary.
 ![Arbitrary read](/assets/img/robobird_arbit_read.png)
 
-3. There is a buffer overflow, an interesting one to say the least. Buffer size is set to 104 bytes at mark 1, and fgets read 106 bytes including the null terminator. So this is essentially a single byte overflow. Very interesting bug.
+3. There is a buffer overflow, an interesting one, to say the least. Buffer size is set to 104 bytes at mark 1, and fgets reads 106 bytes including the null terminator. So this is essentially a single byte overflow. Very interesting bug.
 ![Stack smash](/assets/img/robobird_stack_smash.png)
 
 4. And finally most critical bug of the binary: format string vulnerability. Whatever user has provided is printed using printf directly. This should give us the ability to overwrite stuff from GOT.
@@ -50,7 +50,7 @@ Compared to previous weeks, this one comes with multiple issues and attack vecto
 
 ### Attack Plan
 
-This one involves multiple attack points, so we need to make an attack plan to get to the shell. Looking at our options, we can only overflow one byte which will trigger the stack canary check. So we can't ROP around the binary if we can't get to the return address and override it even if we managed to leak the stack canary in this instance. What we know is if stack smash is detected, program calls the libc function __stack_chk_fail. And guess where the offset for this function is stored, that is right in GOT. With the format string bug, we can override GOT entries, meaning by overriding GOT entry for __stack_chk_fail, we can redirect the code flow to somewhere else. Next question is where do we want to redirect to? Well we need a shell, so we will return to libc. To return to libc we will need to leak an address from libc to find the base address since it will be randomly put in memory due to ASLR. We should be able to do that using the arbitrary read bug we found above at 2nd mark. Now if we summarize the attack plan:
+This one involves multiple attack points, so we need to make an attack plan to get to the shell. Looking at our options, we can only overflow one byte which will trigger the stack canary check. So we can't ROP around the binary if we can't get to the return address and override it even if we managed to leak the stack canary in this instance. What we know is if stack smash is detected, program calls the libc function __stack_chk_fail. And guess where the offset for this function is stored, that is right in GOT. With the format string bug, we can override GOT entries, meaning by overriding GOT entry for __stack_chk_fail, we can redirect the code flow to somewhere else. Next question is where do we want to redirect to? Well we need a shell, so we will return to libc. To return to libc we will need to leak an address from libc to find the base address since it will be randomly put in memory due to ASLR. We should be able to do that using the arbitrary read bug we found above at 2nd mark. Now, if we summarize the attack plan:
 
 1. Use arbitrary read bug to get a libc function's offset from GOT.
 2. Utilize format string bug to overwrite GOT entries to control the flow of the binary to a one gadget.
@@ -64,14 +64,13 @@ Now let's start applying the attack plan step by step to get to the shell.
 
 ### Libc Leak
 
-Looking at the code, it takes an integer from user and prints something using robobirdNames array. And there is no bound checking, so we can provide any integer to point to any address in the code space. robobirdNames array is stored at 0x006020a0 in the .data section of the binary. I picked puts as my target to get the address. **At the point/time of leakage, puts has already been called, so its offset should already be dynamically resolved and stored in GOT.**
+Looking at the code, it takes an integer from user and prints something using robobirdNames array. And there is no bound checking, so we can provide any integer that points to any address in the code space. robobirdNames array is stored at 0x006020a0 in the .data section of the binary. I picked puts as my target to get the address. **At the time of leakage, puts has already been called, so its offset should already be dynamically resolved and stored in GOT.**
 
 ![Got](/assets/img/robobird_got.png)
 
 GOT entry for puts is stored at address 0x00602020. So the input we need to give to the binary can be simply calculated as:
 
 (0x00602020 - 0x006020a0) / 8 = -16
-
 ```python
 io = start()
 
@@ -97,7 +96,7 @@ We need to figure out where we want to return to in libc to pop a shell. One gad
 
 ![One gadgets](/assets/img/robobird_gadgets.png)
 
-Now at this point, a reasoanble person would debug and check when we are jumping to these gadgets if the shown conditions are met or not. Or you can just do like I do, just try each one of them one by one. I might come back to this at some point in future and try to do this more properly by looking at conditions, but for now 2nd one worked for me and I will leave it at that. 
+Now at this point, a reasonable person would debug and check when we are jumping to these gadgets if the shown conditions are met or not. Or you can just do like I do, just try each one of them one by one. I might come back to this at some point in future and try to do this more properly by looking at conditions, but for now the 2nd one worked for me and I will leave it at that. 
 
 ### Format String Vulnerability
 
@@ -107,8 +106,7 @@ Once we find a format string bug, next thing to figure out is where in the stack
 
 ![Finding offset](/assets/img/robobird_findingoffset.png)
 
-We can see that our input AAAAAAAA (0x41....) appeared on the 8th offset. We will use this offset = 8 in pwntools to create our payload. pwntool's format string functionality offers different ways to create the payload where some of them has more options. **Some generates longer outputs that might not fit into the buffer!** Here look at these two options:
-
+We can see that our input AAAAAAAA (0x41....) appeared on the 8th offset. We will use this offset = 8 in pwntools to create our payload. pwntools' format string functionality offers different ways to create the payload where some of them have more options. **Some generate longer outputs that might not fit into the buffer!** Here look at these two options:
 ```python
 # v1
 onegadget = libc.address + 0xe3b01
@@ -138,9 +136,9 @@ padlen = 105 - plen
 payload += b'A'*padlen
 ```
 
-Looking at v1 and v2, main difference is that we can't set write size in the first version. Using short instead of default byte size write makes the generated payload more compact. **With v1 in many runs I ended up getting more bytes than I could fit into the buffer**. With v1, maybe one out of five runs, I could get less than 105 bytes depending on where libc ended up in memory. So if space is an issue, choosing the generator function version might be better fit since it offers much more configuration than the FmtStr class. On the other hand, class offers some automation functions that could be useful at a different problem. 
+Looking at v1 and v2, the main difference is that we can't set write size in the first version. Using short instead of default byte size write makes the generated payload more compact. **With v1 in many runs I ended up getting more bytes than I could fit into the buffer**. With v1, in maybe one out of five runs, I could get less than 105 bytes depending on where libc ended up in memory. So if space is an issue, choosing the generator function version might be a better fit since it offers much more configuration than the FmtStr class. On the other hand, the class offers some automation functions that could be useful for a different problem. 
 
-And finally 105 bytes is used to fill 104 bytes buffer with one byte overflow. Overflowed byte falls right into the stack canary to cause a stack smash. 
+And finally 105 bytes is used to fill 104 bytes buffer with one byte overflow. The overflowed byte falls right into the stack canary to cause a stack smash. 
 
 > Lesson of the day: Sometimes crashing a program may not be a bad thing, if you can control the flow of the crash.
 {: .prompt-info }
@@ -148,7 +146,6 @@ And finally 105 bytes is used to fill 104 bytes buffer with one byte overflow. O
 ## Final Code
 
 Now let's put it all together in one final script
-
 ```python
 from pwn import *
 
@@ -218,5 +215,3 @@ A couple of lessons I learned from this task:
 * One gadgets are cool - but learn to check if conditions can be met. Maybe there could be cases where you can control such conditions and make them work. 
 
 This is it from this challenge. Maybe it is time to move to medium challenges next week, we will see. As always, keep learning!
-
-
