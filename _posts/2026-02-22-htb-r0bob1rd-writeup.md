@@ -15,6 +15,8 @@ tags:
 
 I'm back with my third week of challenge series: One pwn writeup a week. In this third week, I am again looking at another easy challenge from hackthebox: r0bob1rd. Let's call it robobird to make it easy to write. Challenge can be found here: <https://app.hackthebox.com/challenges/r0bob1rd>
 
+Other pwn writeups I completed and more can be found under this category here: <https://yusuftas.net/categories/pwn/>
+
 ## Initial Look
 
 I always start with checking what flags are enabled/disabled to see what I am dealing with.
