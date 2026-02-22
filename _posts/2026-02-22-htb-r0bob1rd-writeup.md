@@ -1,6 +1,6 @@
 ---
 title: "HTB: r0bob1rd Pwn Writeup"
-date: 2026-02-18
+date: 2026-02-22
 categories: 
   - "reverse-engineering"
   - "pwn"
@@ -13,7 +13,7 @@ tags:
   - "reverse-engineering"
 ---
 
-I'm back with my third week of challenge series: One pwn writeup a week. In this third week, I am again looking at another easy challenge from hackthebox: r0bob1rd. Let's call it robobird to make it easy to write. Challenge can be found here: <https://app.hackthebox.com/challenges/r0bob1rd>
+I'm back with my third week of challenge series: One pwn writeup a week. In this third week, I am again looking at another easy challenge from hackthebox: r0bob1rd. Let's call it robobird to make it easy to write. Challenge can be found here: <https://app.hackthebox.com/challenges/r0bob1rd> 
 
 Other pwn writeups I completed and more can be found under this category here: <https://yusuftas.net/categories/pwn/>
 
