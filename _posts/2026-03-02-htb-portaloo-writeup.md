@@ -25,9 +25,9 @@ As always, let's check security flags to see what we are dealing with.
 
 Excuse me, but what is going on here? What are these two new flags: SHSTK and IBT? Okay this one is definitely going to be interesting, and probably more challenging than what I have done so far. But that is good, this is how we get better isn't it! 
 
-Okay enough crying, time to learn something new! After a bit of searching and reading, I now have a better idea of what these two new flags are. SHSTK stands for shadow stack, and IBT is indirect branch tracking. In a short summary, they are hardware based features that comes with modern CPUs to protect against control flow hijacking attacks, like ROP, JOP etc. They are part of Intel's Control-flow Enforcement Technology (CET). Shadow stack maintains a secondary copy of stack to store return addresses to prevent return addresses being overwritten by overflows and other attacks. IBT on the other hand ensures jump/call instructions land on ENDBR opcodes. I will need to come back to this to figure out how to bypass these restrictions. 
+Okay enough crying, time to learn something new! After a bit of searching and reading, I now have a better idea of what these two new flags are. SHSTK stands for shadow stack, and IBT is indirect branch tracking. In a short summary, they are hardware based features that come with modern CPUs to protect against control flow hijacking attacks, like ROP, JOP etc. They are part of Intel's Control-flow Enforcement Technology (CET). Shadow stack maintains a secondary copy of stack to store return addresses to prevent return addresses being overwritten by overflows and other attacks. IBT on the other hand ensures jump/call instructions land on ENDBR opcodes. I will need to come back to this to figure out how to bypass these restrictions. 
 
-Some corrections from future me: what you see may not mean what will happen! After a bit searching and discussions with Claude, SHSTK may not always be honoured! It depends on hardware and OS support as well as loaded dynamic libraries. **OS may disable SHSTK support if dynamic libraries are not compiled with SHSTK support.**. Since the binary comes with a prefixed glibc, let's have a look at what it is compiled with:
+Some corrections from future me: what you see may not mean what will happen! After a bit of searching and discussions with Claude, SHSTK may not always be honoured! It depends on hardware and OS support as well as loaded dynamic libraries. **OS may disable SHSTK support if dynamic libraries are not compiled with SHSTK support.**. Since the binary comes with a prefixed glibc, let's have a look at what it was compiled with:
 
 ```
 glibc/libc.so.6'
@@ -38,7 +38,7 @@ glibc/libc.so.6'
     PIE:      PIE enabled
 ```
 
-How interesting, there is no SHSTK or IBT flag here. I wish I had known this earlier, I spent a good amount of time researching how to bypass SHSTK restrictions! For this binary, we can probably assume SHSTK won't be a problem at least. With that is out of the way, I think we can focus more on the actual binary and see what kind of bugs it brings to the table.
+How interesting, there is no SHSTK or IBT flag here. I wish I had known this earlier, I spent a good amount of time researching how to bypass SHSTK restrictions! For this binary, we can probably assume SHSTK won't be a problem at least. With that out of the way, I think we can focus more on the actual binary and see what kind of bugs it brings to the table.
 
 > Checking security flags is important but don't get too attached to them. They may not be a problem as you expect them to be. 
 {: .prompt-danger }
@@ -46,7 +46,7 @@ How interesting, there is no SHSTK or IBT flag here. I wish I had known this ear
 
 ## Identified bugs
 
-Let's now have a look at the decompiled code to see if we can find any bugs we can use. I will be using ghidra to get decompilation, with a bit of cleaning done by myself. Main function seems to be a loop where the user can select from one of the options:
+Let's now have a look at the decompiled code to see if we can find any bugs we can use. I will be using ghidra to get decompilation, with a bit of cleanup on my part. Main function seems to be a loop where the user can select from one of the options:
 
 ```c++
 
@@ -131,7 +131,7 @@ Looking at create portal function there is an interesting mprotect call:
 * Pointers to allocated memory regions are stored in **slots** global array
 * For the first memory allocation, mprotect is called with **7 parameter which gives that memory region read, write and execute rights.**
 
-Maybe we can use the first allocated version to execute some shellcode, let's see what other functions brings to the table. 
+Maybe we can use the first allocated version to execute some shellcode, let's see what the other functions bring to the table. 
 
 ### Use After Free (UAF)
 
@@ -198,7 +198,7 @@ void peek_into_the_void(void)
 
 ```
 
-One interesting observation is that although the memory region is 32 bytes, upgrade portal only reads and write 21 bytes of user input to the selected portal/memory. Regardless, being able to write and read from heap could be useful especially with the use after free bug.
+One interesting observation is that although the memory region is 32 bytes, upgrade portal only reads and writes 21 bytes of user input to the selected portal/memory. Regardless, being able to write and read from the heap could be useful especially with the use after free bug.
 
 ### Buffer overflows
 
@@ -249,15 +249,15 @@ Now what if we overflow into that null byte of stack canary? Since this is the f
 
 ![canary 1 byte overflow](/assets/img/portaloo_canaryoverflow.png)
 
-Looking at the received bytes from the print function call and comparing it to the values in stack, we can see the stack canary with the modifed byte is received. Notice how it also printed RBP and then stopped due to 0x00 byte of the RBP ended the string now. **In short, we can now leak stack canary and RBP in that function.** We can't leak RIP after the RBP, but we don't really need that, it is something we want to override to return somewhere else. 
+Looking at the received bytes from the print function call and comparing it to the values in stack, we can see the stack canary with the modified byte is received. Notice how it also printed RBP and then stopped due to 0x00 byte of the RBP ending the string now. **In short, we can now leak stack canary and RBP in that function.** We can't leak RIP after the RBP, but we don't really need that, it is something we want to override to return somewhere else. 
 
 ### Double free
 
 This is a very new concept for me, so take whatever I document here with a grain of salt. 
 
-Double free is just an interesting concept and opened my eyes to many stuff I never thought about before. Like when we allocate memory with malloc, what really happens? How does glibc decide what memory region to give, and what happens to that memory and pointer to it when we deallocate with free? These kind of questions are the ones we take it for granted from standard library, it just works right, no one really cares what is happenning behind the scenes. Attackers do! All of this stuff could be open to vulnerabilities and exploits. Double free is one just concept. 
+Double free is an interesting concept and opened my eyes to a lot of stuff I never thought about before. Like when we allocate memory with malloc, what really happens? How does glibc decide what memory region to give, and what happens to that memory and pointer to it when we deallocate with free? These kind of questions are the ones we take for granted from the standard library, it just works right, no one really cares what is happening behind the scenes. Attackers do! All of this stuff could be open to vulnerabilities and exploits. Double free is one such concept.
 
-It sounds like an oxymoron, like how do we free something again that has already been freed before. **UAF is one of the ways that could lead to double free: delete something, use the deleted region, delete again in simple terms.** Depending on the context, double free could lead to program crashes to arbitrary code execution. To understand how we can make use of double free to our advantage for this challenge, it is important to understand how heap is managed at least briefly.
+It sounds like an oxymoron, like how do we free something again that has already been freed before. **UAF is one of the ways that could lead to double free: delete something, use the deleted region, delete again in simple terms.** Depending on the context, double free could lead to program crashes to arbitrary code execution. To understand how we can make use of double free to our advantage for this challenge, it is important to understand how the heap is managed at least briefly.
 
 
 #### Tcache (Thread Local Cache)
@@ -323,9 +323,9 @@ void *D = malloc(0x20);  // gets chunk C (popped from head)
 //                       (count: 2)
 ```
 
-Another malloc would return B, then the next would return A, and after that the bin would be empty. One thing to note here is KEY field is introduced against double free. It is set to where the tcache is stored. Whenever free is called, heap manager checks that field to see if it is equal to tcache address. It is a simple equality check to see if this memory has been freed before. If KEY field is equal to the tcache address, it has been freed before and double free is detected! **This also means if we can overwrite one byte of this field, equality check will fail and double free can't be detected!** 
+Another malloc would return B, then the next would return A, and after that the bin would be empty. One thing to note here is the KEY field is introduced against double free. It is set to where the tcache is stored. Whenever free is called, the heap manager checks that field to see if it is equal to the tcache address. It is a simple equality check to see if this memory has been freed before. If the KEY field is equal to the tcache address, it has been freed before and double free is detected! **This also means if we can overwrite one byte of this field, the equality check will fail and double free can't be detected!** 
 
-At this point, one clever person might ask if heap manager is writing next address pointer to freed space, can't we use that to leak the heap addresses using the peek into the void function. Well, yes and no. We can leak it, but there is one more protection mechanism applied to it:
+At this point, one clever person might ask if the heap manager is writing the next address pointer to freed space, can't we use that to leak the heap addresses using the peek into the void function. Well, yes and no. We can leak it, but there is one more protection mechanism applied to it:
 
 #### Safe-linking (glibc 2.32+)
 
@@ -335,7 +335,7 @@ In older glibc versions, the fd pointer was stored in plaintext. An attacker wit
 stored_fd = actual_next_address ^ (this_chunk_address >> 12)
 ```
 
-What we need is the address of the allocated chunk so that we can return to it and execute some shell code. We can leak the encoded fd using peek function, but this XOR actually makes it hard to recover the actual address. To be able to get to address, we will be exploiting using double free to simplify this XOR equation. 
+What we need is the address of the allocated chunk so that we can return to it and execute some shell code. We can leak the encoded fd using the peek function, but this XOR actually makes it hard to recover the actual address. To be able to get the address, we will be exploiting double free to simplify this XOR equation. 
 
 #### Double Free in Action
 
@@ -384,7 +384,7 @@ free(slots[0]);  // glibc doesn't detect the double free, chunk is inserted agai
 // slots[0] ──▶ ┌──────────────────────────────────────┐
 //   (dangling!) │ Chunk @ 0x5555deadb2b0  (DOUBLE FREED)│
 //               │                                       │
-//               │ bytes 0-7:  fd = addr ^ (addr >> 12)   │  ◄── self-referencing! Sicne tcache is poisoned with double free, next address and this address is same
+//               │ bytes 0-7:  fd = addr ^ (addr >> 12)   │  ◄── self-referencing! Since tcache is poisoned with double free, next address and this address are the same
 //               │ bytes 8-15: key = TCACHE_KEY            │  
 //               │ bytes 16-31: <stale data>               │
 //               └───────────┬──────────────────────────┘
@@ -403,7 +403,7 @@ leaked value = addr ^ (addr >> 12)
              = 0x55508bf0586b   (example result)
 ```
 
-From this leaked value we can fully recover the original address iteratively, since the top bits are unaffected by the 12-bit shift. I actually found a similar pwn challenge writeup here:  <https://www.secquest.co.uk/white-papers/tcache-heap-exploitation>. This writeup was using this function to demangle 
+From this leaked value we can fully recover the original address iteratively, since the top bits are unaffected by the 12-bit shift. I actually found a similar pwn challenge writeup here:  <https://www.secquest.co.uk/white-papers/tcache-heap-exploitation>. This writeup used the following function to demangle the pointer:
 
 ```python
 def safeLinkStrip(val):
@@ -413,7 +413,7 @@ def safeLinkStrip(val):
     return val
 ```
 
-And also got Claude to write me a similar one:
+I also got Claude to write me a similar one:
 
 ```python
 def demangle(leak):
@@ -425,7 +425,7 @@ def demangle(leak):
 heap_chunk_addr = demangle(leaked_value)
 ```
 
-Interestingly with my leaked fd, I was getting the same results. I might come back to this at some point to understand why both of them worked but for now this should give us the **full heap address** directly. Honestly, trying to understand this was pretty tricky, I had to do a lot of reading, and consultations with AI. Overall I think I now better understand how tcache and some heap stuff works. If you want to read more examples and different explanations, feel free to check these links out:
+Interestingly with my leaked fd, I was getting the same results. I might come back to this at some point to understand why both of them worked but for now this should give us the **full heap address** directly. Trying to understand this was pretty tricky, I had to do a lot of reading, and consultations with AI. Overall I think I now better understand how tcache and some heap stuff works. If you want to read more examples and different explanations, feel free to check these links out:
 
 1. <https://medium.com/@mrajagopalaswamy/free-and-its-hidden-details-tcache-4a49dd3b2f08>
 2. <https://www.secquest.co.uk/white-papers/tcache-heap-exploitation>
@@ -440,13 +440,13 @@ So far we have seen some bugs and deliberate helpful points provided by the chal
 3. Executable memory region - good candidate for some shellcode action
 4. Writable memory in heap. 
 
-We are given an executable region, so most likely scenario is we need to execute shellcode there. But looking at the write size of 21 bytes, that could be a bit challenging. Executable region is in the heap, we need to leak where the memory in heap is using the double free approach we discussed. If we need to return to that memory, we also need to deal with stack canary. And hopefully we don't have to deal with SHSTK. In simple terms:
+We are given an executable region, so the most likely scenario is we need to execute shellcode there. But looking at the write size of 21 bytes, that could be a bit challenging. The executable region is in the heap, we need to leak where the memory in the heap is using the double free approach we discussed. If we need to return to that memory, we also need to deal with the stack canary. And hopefully we don't have to deal with SHSTK. In simple terms:
 
 1. Leak executable code area's address using double free and peek
 2. Generate some shellcode that we can somehow fit into 21 bytes. 
-3. Leak stack canary in step function and overwrite return address to go back to the stored shellcode in executable region. 
+3. Leak stack canary in step function and overwrite return address to go back to the stored shellcode in the executable region. 
 
-Since there is a menu with different options, I think making simplified interfaces to these function will make writing the exploit easier. Here are some functions I created to interface into the binary:
+Since there is a menu with different options, I think making simplified interfaces to these functions will make writing the exploit easier. Here are some functions I created to interface into the binary:
 
 ```python
 def createPortal(p, portal):
@@ -512,7 +512,7 @@ bytes 88-95:   return address  ← we overwrite this with heap shellcode addr
 bytes 96-103:  extra 8 bytes   ← we can put "/bin/sh\0" here!
 ```
 
-How conveniently buffer overflow has just the enough size to fit the string! When the ret instruction pops the return address and jumps to our shellcode, RSP advances to byte 96, which is exactly where "/bin/sh\0" sits on the stack. So our shellcode just needs to do `mov rdi, rsp` and rdi will point to "/bin/sh"! The shellcode becomes:
+How conveniently the buffer overflow has just enough size to fit the string! When the ret instruction pops the return address and jumps to our shellcode, RSP advances to byte 96, which is exactly where "/bin/sh\0" sits on the stack. So our shellcode just needs to do `mov rdi, rsp` and rdi will point to "/bin/sh"! The shellcode becomes:
 
 ```asm
 mov rdi, rsp       ; 3 bytes — rdi points to "/bin/sh\0" on stack
@@ -524,7 +524,7 @@ syscall            ; 2 bytes
                    ; Total: 12 bytes!
 ```
 
-Let's take a moment to thank Claude for the shellcode. I am personally not ready to learn assembly yet, but thanks to the AI we can get some of this stuff done easier. 12 bytes. Fits comfortably within our 21 byte limit. And the best part is this shellcode has **no hardcoded addresses in it**. We can write it to the heap before we even leak the stack canary because it doesn't depend on any addresses. It uses RSP at runtime to find "/bin/sh". 
+Let's take a moment to thank Claude for the shellcode. I am personally not ready to learn assembly yet, but thanks to AI we can get some of this stuff done easier. 12 bytes. Fits comfortably within our 21-byte limit. And the best part is this shellcode has **no hardcoded addresses in it**. We can write it to the heap before we even leak the stack canary because it doesn't depend on any addresses. It uses RSP at runtime to find "/bin/sh". 
 
 ```python
 createPortal(io, b'0')
@@ -718,8 +718,8 @@ This challenge taught me quite a lot of new things compared to the previous week
 
 * **UAF is powerful.** A single missing `pointer = NULL` after free gave us the ability to leak heap addresses, bypass double free detection, and ultimately write shellcode to executable memory. 
 
-* **Shellcode size matters.** Honestly there were clues along the binary to make it easy to figure this out. Like why the second buffer overflow was longer than needed? But still, it taught me that you don't always have to place the full shellcode into executable area. 
+* **Shellcode size matters.** There were clues along the binary to make it easy to figure this out. Like why the second buffer overflow was longer than needed? But still, it taught me that you don't always have to place the full shellcode into the executable area. 
 
-There is actually something bothering me looking at this challenge. **There are two portals** There must have been a reason to introduce a second memory chunk. We just didn't need to use it at all for some reason. **Did I actually end up finding an unintended solution with double free???** To be honest that would be very cool, first ever unintended solution! Thinking about two portals, I think there is another way to get heap address without doing a double free. With single free and UAF we should be able to leak  A ^ (B >> 12) and 0 ^ (B >> 12). By using these two leaks we can get the address of A. I think this post has been waaaay longer than I expected, I will leave this here for the reader to think and implement if they want to. 
+There is actually something bothering me looking at this challenge. **There are two portals.** There must have been a reason to introduce a second memory chunk. We just didn't need to use it at all for some reason. **Did I actually end up finding an unintended solution with double free???** To be honest that would be very cool, first ever unintended solution! Thinking about two portals, I think there is another way to get the heap address without doing a double free. With a single free and UAF we should be able to leak  A ^ (B >> 12) and 0 ^ (B >> 12). By using these two leaks we can get the address of A. I think this post has been waaaay longer than I expected, I will leave this here for the reader to think and implement if they want to. 
 
-This was definitely the hardest challenge so far in my series, and honestly the most rewarding one too. Heap exploitation felt like learning a completely new skill on top of everything from previous weeks. Let's see what comes next week. As always, keep learning!
+This was definitely the hardest challenge so far in my series, and the most rewarding one too. Heap exploitation felt like learning a completely new skill on top of everything from previous weeks. Let's see what comes next week. As always, keep learning!
