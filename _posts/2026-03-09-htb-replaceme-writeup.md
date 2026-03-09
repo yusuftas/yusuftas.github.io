@@ -13,7 +13,7 @@ tags:
   - "reverse-engineering"
 ---
 
-This week for my weekly pwn writeup series, I have another medium level challenge from hackthebox: <https://app.hackthebox.com/challenges/ReplaceMe?tab=play_challenge>. Again I will say this, it was a quite entertaining and informative challenge. Let's start with a first look.
+This week for my weekly pwn writeup series, I have another medium-level challenge from Hack The Box: <https://app.hackthebox.com/challenges/ReplaceMe?tab=play_challenge>. Again I will say it - it was quite an entertaining and informative challenge. Let's start with a first look.
 
 ## First Look
 
@@ -21,16 +21,15 @@ I always start with a checksec to see what I am dealing with:
 
 ![Checksec](/assets/img/replaceme_checksec.png)
 
-Okay not too bad, almost all flags are enabled other than the stack canary. I will ignore SHSTK and IBT flags, I don't think they will be doing anything in this medium level challenge. If you want to see how I panicked the first time I saw those flags, have a look at this writeup: <https://yusuftas.net/posts/htb-portaloo-writeup/>
+Okay, not too bad, almost all flags are enabled other than the stack canary. I will ignore the SHSTK and IBT flags; I don't think they will be doing anything in this medium level challenge. If you want to see how I panicked the first time I saw those flags, have a look at this writeup: <https://yusuftas.net/posts/htb-portaloo-writeup/>
 
-Looking at ghidra, there is not many functions that we need to investigate:
+Looking at Ghidra, there are not many functions that we need to investigate:
 
 ![Functions](/assets/img/replaceme_functions.png)
 
-After looking at decompilation output, there was only one function that we need to deal with: do_replacement. Other functions didn't seem to have any bugs or issues we can make use of. I tried to clean the output in Ghidra a bit to make it easy to read:
+After looking at the decompilation output, there was only one function we needed to deal with: `do_replacement`. The other functions didn't seem to have any bugs or issues we could make use of. I tried to clean the output in Ghidra a bit to make it easier to read:
 
 ```c++
-
 void do_replacement(void)
 
 {
@@ -212,28 +211,28 @@ void do_replacement(void)
 }
 ```
 
-It is a sed like string replacement utility function. It takes two strings from user input and replacement string where replacement string should follow the sed replacement style: s/old/new/. And then first instance of old in the input string will be replaced by new. I think this is the first time in my challenge series that I am given a proper looking program. Previously others were more like purposefully broken binaries. Now this one on the other hand, is more like a real application with a purpose. Let's first summarize how the replacement works:
+It is a sed like string replacement utility function. It takes two strings from user input and a replacement string, where the replacement string should follow the sed replacement style: `s/old/new/`. The first instance of `old` in the input string will then be replaced by `new`. I think this is the first time in my challenge series that I have been given a proper looking program. Previously, others were more like purposefully broken binaries. This one, on the other hand, is more like a real application with a purpose. Let's first summarize how the replacement works:
 
-1. Replacement string should follow the sed style:  s/old/new/  so the binary checks for thats. Does it start with s/, does it end with / etc. And the extract old and new string positions from the given string by finding /. This is actually important because old and new is decided on position of / in the replacement string.
-2. Search old string in the input 
-3. If found construct the result in three copies:
-  * Copy everything from input before match to out_arr
-  * Copy new string into out_arr
-  * And then finally if there is any leftover after match copy into out_arr
+1. The replacement string should follow the sed style: `s/old/new/`, so the binary checks for that. Does it start with `s/`? Does it end with `/`? It extracts the old and new string positions from the given string by finding `/`. This is actually important because old and new are determined by the position of `/` in the replacement string.
+2. Search for the old string in the input.
+3. If found, construct the result using three copies:
+   * Copy everything from input before the match to `out_arr`
+   * Copy the new string into `out_arr`
+   * Finally, if there are any leftover bytes after the match, copy them into `out_arr`
 
-For example, let's say the input is  AAABCCCC and replacement is s/B/GGG/. Old string matching position is 3rd index in input, anything before that (AAA) is copied into out_arr, then new string is copied (GGG) and then leftovers (CCCC) are copied. So we get AAAGGGCCCC result. 
+For example, let's say the input is `AAABCCCC` and the replacement is `s/B/GGG/`. The old string match is at index 3 in the input. Everything before it (`AAA`) is copied into `out_arr`, then the new string is copied (`GGG`), and then the leftover (`CCCC`) is copied, giving us `AAAGGGCCCC` as the result.
 
-Looking at user input, there doesn't seem to be a buffer overflow. However looking at copying logic and how it is applied at the end, we can see that **none of the memcpy operations are protected by checking if the out_arr have enough capacity to contain the result.** This is the buffer overflow we need to exploit! Let's consider this example to make it more tangibl, input is B followed by 100A,  and replacement is B replaced by 100A. What will happen when we execute this? B is replaced by 100A and then followed by copying leftoever 100A which gives us 200A as a result. This is much larger than the allocated output buffer! So it will overflow and possibly crash. 
+Looking at the user input, there doesn't seem to be a buffer overflow. However, looking at the copying logic and how it is applied at the end, we can see that **none of the `memcpy` operations are protected by checking whether `out_arr` has enough capacity to contain the result.** This is the buffer overflow we need to exploit! Consider this example: the input is `B` followed by 100 `A`s, and the replacement substitutes `B` with 100 `A`s. What happens when we execute this? `B` is replaced by 100 `A`s, which are then followed by the 100 `A` leftovers, giving us 200 `A`s as the result. This is much larger than the allocated output buffer, so it will overflow and possibly crash.
 
-Looking at the code, I couldn't identify any other bug. So we are given a buffer overflow only and we need to construct properly designed inputs to overflow the buffers. But what is the target here? Looking at security flags, we got PIE, full relro etc. So we don't know code address space, we don't know libc address (ASLR), we can't overwrite GOT. We can overflow the buffer but we don't know where to go, and we don't have a leak yet. 
+Looking at the code, I couldn't identify any other bug. So we are given a buffer overflow only, and we need to construct properly designed inputs to overflow the buffer. But what is the target here? Looking at the security flags, we have PIE and full RELRO, among others. So we don't know the code address space, we don't know the libc address (ASLR), and we can't overwrite GOT. We can overflow the buffer, but we don't know where to go, and we don't have a leak yet.
 
-Well technically there is a leak at the end of the do_replacement function where it prints the resulting out_arr. Since we can overflow and control the result array with our malicious inputs, this printing will probably leak some stuff. But if we can't redirect code to the beginning, we can't make use of this leak since the program finishes after that. Let's see how we can do some small jumps without knowing PIE base to redirect the code.
+Well, technically there is a leak at the end of `do_replacement`, where it prints the resulting `out_arr`. Since we can overflow and control the result array with our malicious inputs, this print will probably leak some data. But if we can't redirect code back to the beginning, we can't make use of this leak since the program finishes after that. Let's see how we can make small jumps without knowing the PIE base to redirect code execution.
 
-## Leaking PIE base
+## Leaking PIE Base
 
-### Small jumps
+### Small Jumps
 
-PIE is a tricky thing to deal with, but there is a small catch. **Due to page-level randomization, the base address of a PIE binary typically ends in 000 (e.g., 0x555555554000)** What does this mean for us? Regardless of how random PIE is, first 12 bits / 3 nibbles of the addresses will not change at all. For example main is currently at 0x0010164e in the code, so when it runs it will be at some random address 0xXXXXXXXXX64e. If we can overwrite the byte 0x4e with the overflow, we can change return address. This gives us a 256 or so bytes range in total to go around the actual return address. Not much, but it can be enough to go back to a point where we can provide inputs again. Technically 12 bits of the address don't change, so if we could provide half byte we could go around more before touching the PIE address bits but we can't do that. Worst case scenario is we can override two bytes which should gives us 1/16 chance to guess the 4 random bits. Sometimes you use whatever is given to you and 1/16 is not too bad if there is a possibility of RCE at the end. Okay let's not go into a tangent, spoilers this binary doesn't require 1/16 chance to guess second byte, one byte is enough. Let's do some debugging by breaking at *do_replacement+602 to see where it is returning to:
+PIE is a tricky thing to deal with, but there is a small catch. **Due to page-level randomization, the base address of a PIE binary typically ends in `000` (e.g., `0x555555554000`).** What does this mean for us? Regardless of how random the PIE address is, the first 12 bits (3 nibbles) of the addresses will not change at all. For example, `main` is currently at `0x0010164e` in the binary, so at runtime it will be at some random address `0xXXXXXXXXX64e`. If we can overwrite the byte `0x4e` with the overflow, we can change the return address. This gives us a range of about 256 bytes around the actual return address. Not much, but it can be enough to jump back to a point where we can provide input again. Technically 12 bits of the address don't change, so if we could provide half a byte we could roam a bit further before touching the PIE address bits, but we can't do that. In the worst case, we can override two bytes, which gives us a 1-in-16 chance of guessing the 4 random bits. Sometimes you use whatever you're given, and 1/16 isn't too bad if there is a possibility of RCE at the end. Okay, let's not go on a tangent, spoiler: this binary doesn't require a 1/16 guess for the second byte; one byte is enough. Let's do some debugging by breaking at `*do_replacement+602` to see where it is returning to:
 
 ```
 Looking at call stack after a couple of runs:
@@ -246,32 +245,31 @@ Looking at call stack after a couple of runs:
 
  ► 0   0x55a02c1f9606 do_replacement+602
    1   0x55a02c1f96be main+112
-
 ```
 
-As you can see, address for main+112 is different for each run but 6be is always there. **And luckily for us instead of returning to main+112, returning to main+0 only requires single byte change:  0x55a02c1f96be -> 0x55a02c1f964e .** That means just by overflowing into the first byte of return address, we can change return address from main+112 to main without knowing PIE base.
+As you can see, the address for `main+112` is different for each run, but `6be` is always there. **And luckily for us, instead of returning to `main+112`, returning to `main+0` requires only a single byte change: `0x55a02c1f96be` -> `0x55a02c1f964e`.** That means just by overflowing into the first byte of the return address, we can change the return address from `main+112` to `main` without knowing the PIE base.
 
 ### Offset to Return Address
 
-Now we have a plan, we need to figure out the offset from the out_arr to the return address to know how much we need to buffer overflow. Normal people use cyclic patterns and stuff to figure out the offset properly, I'm not like them. I kind of use a bit of intiution and estimation to figure out by trial and error. I find Ghidra's stack display very helpful: 
+Now we have a plan: we need to figure out the offset from `out_arr` to the return address to know how much we need to overflow. Normal people use cyclic patterns and similar tools to figure out the offset properly. I'm not like them, I use a bit of intuition and estimation, working it out by trial and error. I find Ghidra's stack display very helpful:
 
 ![Stack](/assets/img/replaceme_stack.png)
 
-Looking at positions in the stack, output array is at -0xc8 (200) and return address is at zero. **This gives me an estimate of 200 bytes offset**. This means if we can generate 200 bytes of output, next byte should reach to the first byte of return address, the byte we need to overwrite to return to main+0. 
+Looking at the positions in the stack, the output array is at `-0xc8` (200) and the return address is at zero. **This gives me an estimate of a 200-byte offset.** This means that if we can generate 200 bytes of output, the next byte should reach the first byte of the return address, the byte we need to overwrite to return to `main+0`.
 
 ### Generating Output
 
-Next step is to generate 200 bytes of output. Since we figured out how replacement works, there are three ways to approach this:
+The next step is to generate 200 bytes of output. Since we understand how the replacement works, there are three ways to approach this:
 
-1. RAApayload s/R/AA/   replacing at the beginning of input
-2. ARApayload s/R/AA/   replacing at the middle of input
-3. AAR  s/R/AApayload/  replacing at the end of input
+1. `RAApayload s/R/AA/` - replacing at the beginning of the input
+2. `ARApayload s/R/AA/` - replacing in the middle of the input
+3. `AAR s/R/AApayload/` - replacing at the end of the input
 
-If you generate the outputs of all these options, you will see that they all generate the same output: AAAApayload. Imagine the AAAA as the 200 bytes of A we need for padding for the overflow followed by the payload bytes. They all generate the same output but the way we provide the payload changes. We will touch this point later on in the writeup, but keep in mind where payload goes and if it can have null bytes or certain bytes that could break the replacement logic. 
+If you generate the outputs for all of these options, you will see they all produce the same result: `AAAApayload`. Think of the `AAAA` as the 200 bytes of padding needed for the overflow, followed by the payload bytes. They all generate the same output, but where the payload is placed differs. We'll come back to this point later in the writeup, keep in mind where the payload goes and whether it can contain null bytes or certain bytes that could break the replacement logic.
 
-### Leaking 
+### Leaking
 
-I went ahead with 3rd way of generating output, it just seemed more appropriate. For this part of the solution, any of the ways above should work since they all generate same output, and we are only using one byte overflow that it shouldn't break replacement logic. 
+I went with the third approach; it just seemed more appropriate. For this part of the solution, any of the three approaches above should work since they all generate the same output, and we are only overflowing one byte, which shouldn't break the replacement logic.
 
 ```python
 def leakPIE(io):
@@ -307,28 +305,27 @@ leaked_main = leakPIE(io)
 pie_base = leaked_main - elf.symbols['main']
 elf.address = pie_base
 print(hex(pie_base))
-
 ```
 
-Since we needed to generate 200 bytes, I separated them into 2x100 bytes to be able to fit them into input and replacement arrays. Rest of the function is pretty straightforward. Send the input and replacement, and then read the output. But why should this leak PIE base? Looking at the code again, we see that at the end out array is printed:
+Since we needed to generate 200 bytes, I split them into 2 × 100 bytes to fit them into the input and replacement arrays. The rest of the function is pretty straightforward: send the input and the replacement, then read the output. But why should this leak the PIE base? Looking at the code again, we see that at the end `out_arr` is printed:
 
 ```c++
     success("Thank you! Here is the result:");
     fputs(out_arr,stdout);
 ```
 
-This call will print the out_arr until null. Since we generated out_arr to be 200A + 0x4e there is no null byte to stop printing. What comes after 0x4e? Rest of the return address! So this should print 200A + 0x4e + rest of return address and stop at the next final 0x00 bytes. I think there is a small chance that this address will contain a null byte in the middle which would stop printing the full address, in that case this will fail and you will just need to rerun it. Also note that since we overwrite the return address, this will print main+0 not main+112.
+This call will print `out_arr` until it hits a null byte. Since we generated `out_arr` to be `200 × A` + `0x4e`, there is no null byte to stop printing. What comes after `0x4e`? The rest of the return address! So this should print `200 × A` + `0x4e` + the rest of the return address, stopping at the next `0x00` bytes. Note that there is a small chance the address will contain a null byte in the middle, which would stop printing before we get the full address, in that case, this will fail and you'll just need to rerun the exploit. Also note that since we overwrote the return address, this will print `main+0`, not `main+112`.
 
-## Leaking LIBC base
+## Leaking LIBC Base
 
-Great, we now should have PIE base figured out and the execution should go back to the beginning. Since now we have PIE base, we should be able to return to more spaces in the code if we need to build a ROP chain for example. To be able to return to libc to get a shell, we now need to figure out the base address of LIBC since it is randomized due to ASLR. Logic for leaking the libc is a generic ROP chain:
+Great, we should now have the PIE base figured out, and execution should go back to the beginning. Since we now have the PIE base, we should be able to return to more locations in the code if we need to build a ROP chain. To return into libc and get a shell, we need to figure out the base address of libc, since it is randomized by ASLR. The logic for leaking the libc address is a generic ROP chain:
 
-1. Target one of the GOT entries, let's say puts. Its offset is stored in GOT
-2. Find pop rdi gadget to store that offset entry in RDI
-3. Build the ROP chain to call puts PLT to print the offset
-4. And then finally return back to main again
+1. Target one of the GOT entries, let's say `puts`. Its offset is stored in the GOT.
+2. Find a `pop rdi` gadget to store that GOT entry in `RDI`.
+3. Build the ROP chain to call `puts@PLT` to print the offset.
+4. Return back to `main`.
 
-This is a classic text book approach to leaking a libc address to figure out the base:
+This is a classic, textbook approach to leaking a libc address in order to calculate the base:
 
 ```python
     rop = ROP(elf)
@@ -343,45 +340,49 @@ This is a classic text book approach to leaking a libc address to figure out the
     payload += p64(elf.symbols['main'])
 ```
 
-Now if you try to run this with the previous way of generating output, you will start getting some issues. Let's have a look at the replacement copying logic one more time:
+Now if you try to run this using the previous approach for generating output, you'll start running into issues. Let's look at the replacement copying logic one more time:
 
 ![Replacement logic](/assets/img/replaceme_replacement.png)
 
-Here the binary calculates how many leftover bytes after replacement left in the input which is used in third memcpy. First memcpy copies bytes from input until the start of the old string, second memcpy copies the new replacement string and third one finally copies the leftover bytes. Let's look at the bytes from previous section to see how these operations go one by one. 
+Here the binary calculates how many leftover bytes remain in the input after the replacement match; this value is used in the third `memcpy`. The first `memcpy` copies bytes from the input up to the start of the old string, the second `memcpy` copies the new replacement string, and the third copies the leftover bytes. Let's walk through the bytes from the previous section to see how each of these operations plays out.
 
-    payload_replace = b's/B/' + b'A' * 100 + b'/'
-    payload_input   = b'B' + b'A' * 100 + b'\x43'
+```
+payload_replace = b's/B/' + b'A' * 100 + b'/'
+payload_input   = b'B' + b'A' * 100 + b'\x43'
+```
 
+1. Input was `B` + 100 × `A` + `0x43`
+2. Replace = `s/B/100A/`, so old = `B`, new = 100 × `A`
+3. Leftovers calculated = 101 bytes (100 × `A` + `0x43`)
+4. Copy up to the old string -> nothing is copied (no bytes before the match)
+5. Copy the new string (100 × `A`) into the output array -> no overflow yet
+6. Copy leftovers into the output array -> now we overflow the local variables on the stack, including one byte of the return address.
 
-1. Input was B + 100A + 0x43
-2. Replace = s/B/100A/ so old = B new = 100A
-3. leftovers is calculated = 101 bytes (100A + 0x43) 
-4. Copy until old string -> nothing is copied, no extra bytes until start of old string
-5. Copy new string 100A into output array -> no overflow yet
-6. Copy leftovers into output array - now we overflow the variables in stack including one byte of return address.
+Now if we tried to follow the same approach for the ROP chain, instead of overflowing with just the byte `0x43`, we would need to send something like the following (based on a sample PIE address):
 
-Now if we were to follow same approach to do the ROP chain, instead of overflowing ony byte 0x43 we need to send these bytes for example (based on a random run's PIE address):
+* `0x0000562a5726c733` -> `pop rdi; ret` gadget in the binary
+* `0x0000562a5726ef98` -> `puts` offset from GOT
+* `0x0000562a5726c0e4` -> `puts` from PLT
+* `0x0000562a5726c64e` -> return back to `main`
 
-* 0x0000562a5726c733 -> pop rdi ret gadget in the binary
-* 0x0000562a5726ef98 -> Puts offset from GOT 
-* 0x0000562a5726c0e4 -> Puts from PLT
-* 0x0000562a5726c64e -> To return back to main
+Now imagine placing these bytes in the leftover part of the input as we did above:
 
-Now imagine we put these bytes to leftover part of the input as we did above : 
+```
+payload_input = b'B' + b'A' * 100 + b'\x0000562a5726c7330000562a5726ef98.........'
+```
 
-    payload_input   = b'B' + b'A' * 100 + b'\x0000562a5726c7330000562a5726ef98.........'
+The length of the leftovers is calculated using `strlen`, which stops at a null byte! Now I hope you're starting to see the picture I'm painting. `strlen` will stop counting the extra bytes we provide due to the null bytes embedded in the addresses, so we will end up copying less than we intended. **For this reason, we cannot use the leftover part of the input to supply the payload.**
 
-And the length of the leftovers is calculated with `strlen` which will stop at null byte! Now I hope you start to see the picture I am painting. strlen will stop counting the extra bytes we put, due to null bytes in addresses. So we will end up copying less than we provide. **So for this reason, we can't use the leftover part of the input to provide the payload!!**
+The other option is to provide the payload through the replacement string. The reason this works is that the length of the replacement is calculated as the difference between the two `/` positions - since `strlen` is not used, this won't break the length calculation. Here's how this looks on an example:
 
-Other option is to provide the payload through replacement. The reason is length of the replacement is calculated as the difference between two / positions. Since strlen isn't used this won't break the length calculation of replacement. Let's have a look at how this works on an example:
+```
+payload_replace = b's/B/' + b'A' * 76 + ROP_bytes  # (32 bytes as shown above)
+payload_input   = b'A' * 124 + b'B'
+```
 
+I made a small adjustment to shuffle some bytes around. With the ROP chain being 32 bytes, I couldn't fit it within 100 bytes of padding, so I moved some of those bytes to the input side. Now, since we are providing the payload bytes in the replacement string, the substitution of the old string must happen at the end of the input so that the final overflowing bytes are the ROP chain.
 
-    payload_replace = b's/B/' + b'A' * 76 + ROP_bytes(32 bytes as shown in example above)
-    payload_input   = b'A' * 124 + b'B'
-
-I did a little bit of change to swap some bytes around. With the ROP chain being 32 bytes, I couldn't provide it with 100 bytes padding, so took some bytes from there and moved to input side. Now since we are providing the payload bytes in replacement, replacement of the old string has to take place at the end of input string so that final overflowing bytes will be the ROP chain. 
-
-This is looking good, but we now have a different problem to deal with. Check out the stack layout one more time. If you look closely, output array is not at the end of stack where the overflow goes straight to return address. There are quite a few local variables stored in the stack between output array and return address. One of these variables is used to store how many bytes left over in input for the third memcpy call. Now, with this new approach, overflow happens at the second memcpy call which is used to copy new string into out array. If the overflow happens before the local variable for leftover bytes is used, it will overflow that variable and the binary will crash. To be able to handle this, we need to set that local variable to its expected value in the overflow bytes to make the code run smoothly. In this instance, we don't have any extra bytes after replacement in the input, so we need to set it to 0. After a bit of trial and error, I found the offset to that variable in the stack and set it to zero in payload:
+This is looking good, but we now have a different problem to deal with. Check out the stack layout one more time. If you look closely, `out_arr` is not at the very end of the stack frame where the overflow flows directly into the return address. There are quite a few local variables stored between `out_arr` and the return address. One of these is used to store how many leftover bytes remain in the input for the third `memcpy` call. With this new approach, the overflow happens during the second `memcpy` call, which copies the new string into `out_arr`. If the overflow overwrites the leftover variable before it is used, the binary will crash. To handle this, we need to set that variable to its expected value within the overflow bytes to allow the code to continue executing correctly. In this instance, we don't have any extra bytes after the replacement in the input, so we need to set it to zero. After a bit of trial and error, I found the offset to that variable on the stack and set it to zero in the payload:
 
 ```python
 def leakLIBC(io, elf, libc):
@@ -430,16 +431,16 @@ print(hex(libc.address))
 
 ## Time to Shell
 
-We now have two critical information we need: PIE base and libc base. We should be able to return to libc and ROP around to get a shell. This part is pretty straight forward, classic return to libc:
+We now have the two critical pieces of information we need: the PIE base and the libc base. We should be able to return into libc and build a ROP chain to get a shell. This part is fairly straightforward - a classic return-to-libc:
 
-1. Find system call from libc
-2. Find /bin/sh string in libc
-3. Store /bin/sh in RDI with a ROP gadget
-4. Call system 
+1. Find the `system` call in libc
+2. Find the `/bin/sh` string in libc
+3. Store `/bin/sh` in `RDI` with a ROP gadget
+4. Call `system`
 
-I actually want to put a little note here. I was using my local libc during my investigations. And by some random chance /bin/sh string's address contained 0x2F ('/') byte. I was getting errors and issues and took me a while to realize **0x2F, forward slash is used to locate new and old string positions. It was breaking the replacement logic.** So if you end up like me while debugging using local libc version, take a look at your libc addresses. This issues doesn't happen with the supplied libc version.
+I want to add a small note here. I was using my local libc during my investigation, and by some random chance the address of the `/bin/sh` string contained the byte `0x2F` (`/`). I was getting errors and spent a while trying to figure them out, before realizing that **`0x2F`, the forward slash, is used to locate the positions of the new and old strings, and was breaking the replacement logic.** So if you run into the same issue while debugging with your local libc, take a look at your libc addresses. This issue does not occur with the supplied libc version.
 
-Other than this, getting the shell was the easiest part. You can see the implementation in the final code section down below.
+Other than that, getting the shell was the easiest part. You can see the implementation in the final code section below.
 
 ## Final Code
 
@@ -592,5 +593,4 @@ getShell(io, elf, libc)
 io.interactive()
 ```
 
-Overall another fun pwn challenge, I enjoyed it toroughly. Analyzing a proper utility function and trying to find attack vectors made this feel more real than other mock examples. Also this challenge was a combination of different attack approaches in a textbook way. Trying to overcome issues and going around the stack to generate the required output was challenging but very informative. I think this post again ended up much longer than I anticipated, I don't want to extend this further than it already is. Hopefully I can manage to keep this challenge going, as always keep learning!
-
+Overall, another fun pwn challenge - I enjoyed it thoroughly. Analyzing a real utility function and searching for attack vectors made this feel more grounded than other toy examples. This challenge was also a nice combination of different attack techniques applied in a textbook way. Working through the constraints to generate the required output was challenging but very educational. This post ended up much longer than I anticipated; I don't want to extend it any further. Hopefully I can keep this series going - as always, keep learning!
