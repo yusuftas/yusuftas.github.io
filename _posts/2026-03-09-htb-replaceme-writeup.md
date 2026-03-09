@@ -15,6 +15,8 @@ tags:
 
 This week for my weekly pwn writeup series, I have another medium-level challenge from Hack The Box: <https://app.hackthebox.com/challenges/ReplaceMe?tab=play_challenge>. Again I will say it - it was quite an entertaining and informative challenge. Let's start with a first look.
 
+My other pwn writeups so far in this challenge series can be found under this category: <https://yusuftas.net/categories/pwn/>
+
 ## First Look
 
 I always start with a checksec to see what I am dealing with:
