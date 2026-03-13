@@ -13,7 +13,7 @@ tags:
   - "reverse-engineering"
 ---
 
-I decided to change things up a bit this week. I have been challenging myself to write one pwn writeup a week for about 7 weeks now. All the previous challenges came from HackTheBox pwn challenges. I ended up checking out online CTFs from ctftime and found one CTF -DiceCTF 2026- that has just concluded with challenges still online. This was the perfect opportunity for me to test my progress and see if I can solve a real and new CTF pwn challenge. Challenge link can be found here though I am not sure how long it will stay online for: <https://ctf.dicega.ng/challenges?challenge=pwn_bytecrusher>
+I decided to change things up a bit this week. I have been challenging myself to write one pwn writeup a week for about 7 weeks now. All the previous challenges came from HackTheBox pwn challenges. I ended up checking out online CTFs from ctftime and found one CTF -DiceCTF 2026- that has just concluded with challenges still online. This was the perfect opportunity for me to test my progress and see if I can solve a real and new CTF pwn challenge. Challenge link can be found here though I am not sure how long it will stay online for: <https://ctf.dicega.ng/challenges?challenge=pwn_bytecrusher>. Also check out the challenge author's blog here: https://max.xz.ax/ Thank you Max for this fun challenge. 
 
 My other pwn writeups so far in this challenge series can be found under this category: <https://yusuftas.net/categories/pwn/>
 
