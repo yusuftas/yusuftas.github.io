@@ -7,6 +7,8 @@ categories:
 tags: 
   - "signals"
   - "rf"
+  - "urh"
+  - "radio hacker"
   - "ctf"
   - "ndias_ctf"
   - "iot_ctf"
