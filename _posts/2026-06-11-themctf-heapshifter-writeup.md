@@ -1,7 +1,6 @@
 ---
 title: "THEM?!CTF 2026: heapshifter Writeup"
 date: 2026-06-11
-layout: post
 categories: 
   - "reverse-engineering"
   - "pwn"
